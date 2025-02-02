@@ -74,12 +74,6 @@ class MarkttechnikStrategy:
             if self.is_inside_bar:
                 self.logger.info("Innenstab-Sequenz beendet - Zurück zu normaler Trailing Stop Logik")
             self.reset_variables()
-            //self.is_inside_bar = False
-            //self.is_first_inside_bar = False
-            //self.outside_high = None
-            //self.outside_low = None
-            //self.previous_bar_high = None
-            //self.previous_bar_low = None
             
     def update_trailing_stop(self, df, i, position_size):
         if not self.is_inside_bar:
@@ -107,16 +101,15 @@ class MarkttechnikStrategy:
                 self.reset_variables()
                 
     def check_trailing_stop(self, df, i, position_size):
-    """
-    Prüft beide Stop-Bedingungen bei Innenstäben
-    """
-    if self.is_inside_bar:
+    # Prüft beide Stop-Bedingungen bei Innenstäben
+    
+        if self.is_inside_bar:
         # Bedingung 1: Bewegung außerhalb des Vorgängerstab-Bereichs
-        if (position_size > 0 and df['low'].iloc[i] < self.previous_bar_low) or \
+            if (position_size > 0 and df['low'].iloc[i] < self.previous_bar_low) or \
            (position_size < 0 and df['high'].iloc[i] > self.previous_bar_high):
-            self.logger.info("Stop ausgelöst - Bewegung außerhalb Vorgängerstab-Bereich")
-            self.close_position()
-            self.reset_variables()
+                self.logger.info("Stop ausgelöst - Bewegung außerhalb Vorgängerstab-Bereich")
+                self.close_position()
+                self.reset_variables()
             
         # Bedingung 2: Schließen außerhalb des Außenstab-Bereichs
         if (position_size > 0 and df['close'].iloc[i] < self.outside_low) or \
@@ -162,7 +155,7 @@ class MarkttechnikStrategy:
                     self.reversal_high = df['high'].iloc[-1]
                     self.reversal_low = df['low'].iloc[-1]
 
-                if position_size != 0
+                if position_size != 0:
                     self.check_inside_bar(df, -1)
                     self.update_trailing_stop(df, -1, position_size)
                     self.check_trailing_stop(current_price, position_size)
@@ -203,7 +196,7 @@ if __name__ == "__main__":
     API_KEY = "IHRE_API_KEY"
     API_SECRET = "IHRE_API_SECRET"
     BASE_URL = "https://paper-api.alpaca.markets"
-    SYMBOL = "AAPL"
+    SYMBOL = "NDX" #"AAPL"
 
     strategy = MarkttechnikStrategy(API_KEY, API_SECRET, BASE_URL, SYMBOL)
     strategy.run()
