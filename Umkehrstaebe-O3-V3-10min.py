@@ -4,13 +4,13 @@ from alpaca_trade_api.stream import Stream
 import datetime
 
 # === API-Konfiguration ===
-API_KEY = 'your_api_key'
-API_SECRET = 'your_api_secret'
+API_KEY = 'PK6BCDFSK9I0CRHD2XCU'
+API_SECRET = 'WNG1EKfH7WZfYggeCtirEIaIS1glCz2yUa3qyock'
 BASE_URL = 'https://paper-api.alpaca.markets'  # Paper Trading URL
 
 # REST-Client für Ordermanagement
 api = tradeapi.REST(API_KEY, API_SECRET, BASE_URL, api_version='v2')
-symbol = "AAPL"
+symbol = "SPY"
 
 # Globaler Zustand für einen aktiven Trade (None, falls kein Trade aktiv)
 # Gespeichert werden:
@@ -289,9 +289,9 @@ async def on_bar(bar):
     minute_bars.append(current_min_bar)
 
     # Sobald 10 1‑Minuten‑Bars vorliegen, aggregiere sie zu einem 10‑Minuten‑Bar
-    if len(minute_bars) >= 10:
-        agg_bar = aggregate_bars(minute_bars[:10])
-        minute_bars[:] = minute_bars[10:]
+    if len(minute_bars) >= 2:
+        agg_bar = aggregate_bars(minute_bars[:2])
+        minute_bars[:] = minute_bars[2:]
         process_10min_bar(agg_bar)
 
 # --- Hauptprogramm: Websocket-Verbindung und Start des Streams ---
