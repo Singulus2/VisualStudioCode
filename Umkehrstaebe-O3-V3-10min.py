@@ -23,6 +23,8 @@ symbol = "SPY"
 #   - entry_bar: der 10‑Minuten‑Bar, an dem der Trade eingestiegen wurde (als Aggregat)
 current_position = None
 
+# Anzahl der 1‑Minuten‑Bars, die zu einem Aggregat zusammengefasst werden sollen
+AGGREGATION_COUNT = 10  
 # Für die Aggregation der 1‑Minuten‑Bars zu 10‑Minuten‑Bars
 minute_bars = []  # Hier werden die empfangenen 1‑Minuten‑Bars gesammelt
 
@@ -289,9 +291,9 @@ async def on_bar(bar):
     minute_bars.append(current_min_bar)
 
     # Sobald 10 1‑Minuten‑Bars vorliegen, aggregiere sie zu einem 10‑Minuten‑Bar
-    if len(minute_bars) >= 2:
-        agg_bar = aggregate_bars(minute_bars[:2])
-        minute_bars[:] = minute_bars[2:]
+    if len(minute_bars) >= AGGREGATION_COUNT:
+        agg_bar = aggregate_bars(minute_bars[:AGGREGATION_COUNT])
+        minute_bars[:] = minute_bars[AGGREGATION_COUNT:]
         process_10min_bar(agg_bar)
 
 # --- Hauptprogramm: Websocket-Verbindung und Start des Streams ---
