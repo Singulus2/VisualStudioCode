@@ -198,33 +198,18 @@ def strategy_logic():
     goLong = crossunder_series.iloc[-1]  # Signal für Long-Einstieg
     goShort = crossover_series.iloc[-1]  # Signal für Short-Einstieg
 
-    # Stop-Loss / Ausstieg:
+    
     current_position = get_current_position(symbol)
 
-    #stopLongCondition = (current_position < 0) and (current['close'] > prev['close'] and prev['close'] > prev2['close'])
-    #stopShortCondition = (current_position > 0) and (current['close'] < prev['close'] and prev['close'] < prev2['close'])
-
-    #if stopLongCondition:
-    #    print("Stopbedingung für Short-Position erfüllt. Wechsel zu Long.")
-    #    submit_exit_order(symbol, qty=10, side='buy')
-    #    submit_long_order(symbol, qty=10)
-     #   return
-
-    #if stopShortCondition:
-    #    print("Stopbedingung für Long-Position erfüllt. Wechsel zu Short.")
-    #    submit_exit_order(symbol, qty=10, side='sell')
-    #    submit_short_order(symbol, qty=10)
-    #    return
-
-    # Einstiegssignale:
+     # Einstiegssignale:
     if goLong:
-        if current_position < 0:
+        if current_position != 0:
             print("Short-Position vorhanden. Schließe Position bevor Long eingegangen wird.")
             submit_exit_order(symbol, qty=10, side='buy')
         print("Go Long Signal erkannt.")
         submit_long_order(symbol, qty=10)
     elif goShort:
-        if current_position > 0:
+        if current_position != 0:
             print("Long-Position vorhanden. Schließe Position bevor Short eingegangen wird.")
             submit_exit_order(symbol, qty=10, side='sell')
         print("Go Short Signal erkannt.")
