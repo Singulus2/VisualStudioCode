@@ -6,6 +6,8 @@ import numpy as np
 import alpaca_trade_api as tradeapi
 from alpaca_trade_api.stream import Stream
 
+import plotly.graph_objects  as go
+
 # === API-Konfiguration ===
 API_KEY = 'PK6BCDFSK9I0CRHD2XCU'
 API_SECRET = 'WNG1EKfH7WZfYggeCtirEIaIS1glCz2yUa3qyock'
@@ -34,7 +36,7 @@ def get_current_position(symbol):
 # --- Indikatorfunktionen ---
 SMA_PERIOD = 10      # Periode für den SMA und für den SMA des True Range
 ATR_PERIOD = 10       # Periode für den ATR
-MULTIPLIER = 2       # Multiplikator für den Keltner Channel
+MULTIPLIER = 1.8       # Multiplikator für den Keltner Channel
 # ATR_THRESHOLD = 40   # Schwellenwert zur Filterung (im Pinescript nur für Seitwärtsbewegung)
 
 def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
@@ -199,23 +201,70 @@ def strategy_logic():
     goShort = crossover_series.iloc[-1]  # Signal für Short-Einstieg
 
     
-    current_position = get_current_position(symbol)
+    #current_position = get_current_position(symbol)
 
      # Einstiegssignale:
     if goLong:
-        if current_position != 0:
-            print("Short-Position vorhanden. Schließe Position bevor Long eingegangen wird.")
-            submit_exit_order(symbol, qty=10, side='buy')
+        api.close_all_positions()
         print("Go Long Signal erkannt.")
         submit_long_order(symbol, qty=10)
     elif goShort:
-        if current_position != 0:
-            print("Long-Position vorhanden. Schließe Position bevor Short eingegangen wird.")
-            submit_exit_order(symbol, qty=10, side='sell')
+        api.close_all_positions()
         print("Go Short Signal erkannt.")
         submit_short_order(symbol, qty=10)
     else:
         print("Kein Handelssignal erkannt.")
+
+    # Nach Ausführung der Strategie-Logik: Aktualisiere den Chart
+    plot_chart()
+
+def plot_chart():
+    """
+    Erzeugt mit Plotly einen interaktiven Chart der aggregierten 10‑Minuten‑Candlesticks
+    und fügt die Keltner Channels (Basis, Upper, Lower) als Linien hinzu.
+    """
+    if not aggregated_bars:
+        return
+
+    df = pd.DataFrame(aggregated_bars)
+    df.sort_values(by='timestamp', inplace=True)
+    df.reset_index(drop=True, inplace=True)
+    df = calculate_indicators(df)
+
+    fig = go.Figure(data=[go.Candlestick(
+        x=df['timestamp'],
+        open=df['open'],
+        high=df['high'],
+        low=df['low'],
+        close=df['close'],
+        name='10min Candles'
+    )])
+
+    # Keltner Channels hinzufügen
+    fig.add_trace(go.Scatter(
+        x=df['timestamp'], y=df['sma'], mode='lines', name='Basis (SMA)',
+        line=dict(color='blue', dash='dot')
+    ))
+    fig.add_trace(go.Scatter(
+        x=df['timestamp'], y=df['upper'], mode='lines', name='Upper',
+        line=dict(color='green', dash='dash')
+    ))
+    fig.add_trace(go.Scatter(
+        x=df['timestamp'], y=df['lower'], mode='lines', name='Lower',
+        line=dict(color='red', dash='dash')
+    ))
+
+    fig.update_layout(
+        title='10-Minute Candlesticks with Keltner Channels',
+        xaxis_title='Timestamp',
+        yaxis_title='Price',
+        xaxis_rangeslider_visible=False
+    )
+
+    # Zum Anzeigen im Browser wird ein HTML-File generiert und automatisch geöffnet.
+    fig.write_html("chart.html", auto_open=True)
+    # Alternativ in Jupyter: fig.show()
+
 
 # --- Asynchrone Callback-Funktion für empfangene 1‑Minuten‑Bars ---
 async def on_bar(bar):
