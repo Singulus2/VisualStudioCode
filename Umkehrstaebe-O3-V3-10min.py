@@ -1,7 +1,9 @@
 import asyncio
 import alpaca_trade_api as tradeapi
 from alpaca_trade_api.stream import Stream
-import datetime
+
+import plotly.graph_objects  as go
+
 
 # === API-Konfiguration ===
 API_KEY = 'PK6BCDFSK9I0CRHD2XCU'
@@ -65,35 +67,52 @@ def is_inside_bar(current, reference):
     return (reference['low'] < current['open'] < reference['high'] and
             reference['low'] < current['close'] < reference['high'])
 
-# --- Orderfunktionen ---
-def submit_long_order(symbol, qty):
+def get_market_price(symbol):
     try:
-        order = api.submit_order(
-            symbol=symbol,
-            qty=qty,
-            side='buy',
-            type='market',
-            time_in_force='day'
-        )
-        print("Long-Order gesendet:", order)
-        return order
+        latest_trade = api.get_latest_trade(symbol)
+        if latest_trade:  # Überprüfen, ob ein Trade gefunden wurde
+            market_price = latest_trade.price
+            print(f"Letzter Handelskurs für {symbol}: {market_price}")
+            return market_price
+        else:
+            print(f"Keine Handelsdaten für {symbol} gefunden.")
+            return None
     except Exception as e:
-        print("Fehler beim Senden der Long-Order:", e)
-        return None
+            print(f"Fehler beim Abrufen des letzten Handelskurses: {e}")
+            return None
 
-def submit_short_order(symbol, qty):
+# --- Orderfunktion ---
+def submit_order(symbol, qty, side):
     try:
-        order = api.submit_order(
-            symbol=symbol,
-            qty=qty,
-            side='sell',
-            type='market',
-            time_in_force='day'
-        )
-        print("Short-Order gesendet:", order)
+        market_price = get_market_price(symbol)
+        if market_price is None:
+            return None
+
+        if side == 'buy': 
+            order = api.submit_order(
+                symbol=symbol,
+                qty=qty,
+                side=side,
+                type='market',
+                time_in_force='day',
+                order_class="bracket",
+                stop_loss=dict(stop_price=market_price * 0.99),  # 1% Stop-Loss
+                take_profit=dict(limit_price=market_price * 1.03)) # 3% Take Profit
+        else:
+            order = api.submit_order(
+                symbol=symbol,
+                qty=qty,
+                side=side,
+                type='market',
+                time_in_force='day',
+                order_class="bracket",
+                stop_loss=dict(stop_price=market_price * 0.99),  # 1% Stop-Loss
+                take_profit=dict(limit_price=market_price * 1.03)) # 3% Take Profit
+
+        print(f"{side.capitalize()}-Order gesendet:", order)
         return order
     except Exception as e:
-        print("Fehler beim Senden der Short-Order:", e)
+        print(f"Fehler beim Senden der {side.capitalize()}-Order:", e)
         return None
 
 def submit_exit_order(symbol, qty, side):
@@ -146,7 +165,7 @@ def process_10min_bar(current):
             #      Das könnte korrekt sein? Analoge stellt sich bei Frage bei Long-Einstieg
             if current['low'] < candidate_short_reversal['low']:
                 print(f"Short-Einstieg ausgelöst: Bei {current['timestamp']} wurde das Tief des Kandidaten ({candidate_short_reversal['low']}) unterschritten.")
-                order = submit_short_order(symbol, qty=10)
+                order = submit_order(symbol, qty=10, side='sell')
                 if order:
                     current_position = {
                         'type': 'short',
@@ -174,7 +193,7 @@ def process_10min_bar(current):
         if candidate_long_reversal is not None:
             if current['high'] > candidate_long_reversal['high']:
                 print(f"Long-Einstieg ausgelöst: Bei {current['timestamp']} wurde das Hoch des Kandidaten ({candidate_long_reversal['high']}) überschritten.")
-                order = submit_long_order(symbol, qty=10)
+                order = submit_order(symbol, qty=10, side='buy')
                 if order:
                     current_position = {
                         'type': 'long',
@@ -270,8 +289,58 @@ def process_10min_bar(current):
             else:
                 print(f"Neuer Kandidat (Short) bei {current['timestamp']} ohne Anpassung (Trailing Stop bleibt bei {pos['trailing_stop']}).")
 
-
     prev_agg_bar = current
+        # Nach Ausführung der Strategie-Logik: Aktualisiere den Chart
+    plot_chart()
+
+def plot_chart():
+    """
+    Erzeugt mit Plotly einen interaktiven Chart der aggregierten 10‑Minuten‑Candlesticks
+    und fügt die Keltner Channels (Basis, Upper, Lower) als Linien hinzu.
+    """
+    if not aggregated_bars:
+        return
+
+    df = pd.DataFrame(aggregated_bars)
+    df.sort_values(by='timestamp', inplace=True)
+    df.reset_index(drop=True, inplace=True)
+    df = calculate_indicators(df)
+
+    fig = go.Figure(data=[go.Candlestick(
+        x=df['timestamp'],
+        open=df['open'],
+        high=df['high'],
+        low=df['low'],
+        close=df['close'],
+        name='10min Candles'
+    )])
+
+    # Keltner Channels hinzufügen
+    fig.add_trace(go.Scatter(
+        x=df['timestamp'], y=df['sma'], mode='lines', name='Basis (SMA)',
+        line=dict(color='blue', dash='dot')
+    ))
+    fig.add_trace(go.Scatter(
+        x=df['timestamp'], y=df['upper'], mode='lines', name='Upper',
+        line=dict(color='green', dash='dash')
+    ))
+    fig.add_trace(go.Scatter(
+        x=df['timestamp'], y=df['lower'], mode='lines', name='Lower',
+        line=dict(color='red', dash='dash')
+    ))
+
+    fig.update_layout(
+        title='10-Minute Candlesticks with Keltner Channels',
+        xaxis_title='Timestamp',
+        yaxis_title='Price',
+        xaxis_rangeslider_visible=False
+    )
+
+    # Zum Anzeigen im Browser wird ein HTML-File generiert und automatisch geöffnet.
+    fig.write_html("chart.html", auto_open=True)
+    # Alternativ in Jupyter: fig.show()
+
+
 
 # --- Asynchrone Callback-Funktion für jeden empfangenen 1‑Minuten‑Bar ---
 async def on_bar(bar):
