@@ -1,3 +1,5 @@
+Man sollte die n_features=72 setzen?
+
 Was in diesem Code enthalten ist:
 Zeithorizont: Der Agent nutzt Stundendaten (1h). Durch n_features=24 blickt er immer genau einen Tag (24 Stunden) zurück, bevor er entscheidet.
 
