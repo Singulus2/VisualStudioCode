@@ -1,0 +1,154 @@
+import numpy as np
+import pandas as pd
+import pandas_ta as ta
+import yfinance as yf
+import pickle
+import random
+from collections import deque
+import matplotlib.pyplot as plt
+from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.optimizers import Adam
+
+# --- 1. Die Finanzumgebung ---
+class FinanceEnv:
+    def __init__(self, symbol, feature_list=['r', 'vol', 'rsi'], n_features=24):
+        self.symbol = symbol
+        self.features = feature_list
+        self.n_features = n_features
+        self.costs = 0.0005 # 0,05% Transaktionsgebühren
+        self._get_data()
+        self._prepare_data()
+
+    def _get_data(self):
+        # Stundendaten der letzten 730 Tage (Maximum für 1h bei yfinance)
+        df = yf.download(self.symbol, period='730d', interval='1h')
+        self.raw = pd.DataFrame({
+            self.symbol: df['Close'],
+            'volume': df['Volume']
+        }).dropna()
+        print(f"Daten geladen: {len(self.raw)} Stunden für {self.symbol}")
+
+    def _prepare_data(self):
+        self.data = self.raw.copy()
+        # Log-Renditen
+        self.data['r'] = np.log(self.data[self.symbol] / self.data[self.symbol].shift(1))
+        self.data['vol'] = self.data['volume']
+        self.data['rsi'] = ta.rsi(self.data[self.symbol], length=14)
+        self.data.dropna(inplace=True)
+        
+        # Statistiken für Scaler speichern
+        self.mean = self.data[self.features].mean()
+        self.std = self.data[self.features].std()
+        
+        # Z-Score Normalisierung
+        self.data_ = (self.data[self.features] - self.mean) / self.std
+
+    def reset(self):
+        self.bar = self.n_features
+        self.treward = 0
+        self.rewards = []
+        self.last_action = None
+        return self._get_state()
+
+    def _get_state(self):
+        state = self.data_[self.features].iloc[self.bar - self.n_features:self.bar].values
+        return state.flatten()
+
+    def step(self, action):
+        # action 1 = Long, action 0 = Short
+        pos = 1 if action == 1 else -1
+        market_ret = self.data['r'].iloc[self.bar]
+        
+        # Reward-Berechnung inkl. Short-Logik
+        reward = pos * market_ret
+        
+        # Transaktionskosten bei Positionswechsel
+        if self.last_action is not None and action != self.last_action:
+            reward -= self.costs
+            
+        self.last_action = action
+        self.treward += reward
+        self.rewards.append(self.treward)
+        self.bar += 1
+        
+        # Drawdown-Berechnung (prozentualer Rückgang vom Peak)
+        cum_ret = np.exp(np.cumsum(self.rewards))
+        peak = np.maximum.accumulate(cum_ret)
+        drawdown = (cum_ret - peak) / peak
+        max_dd = np.min(drawdown) if len(drawdown) > 0 else 0
+        
+        # Ende erreicht oder Stop-Out bei 15% Drawdown
+        done = (self.bar >= len(self.data) - 1) or (max_dd < -0.15)
+        
+        return self._get_state(), reward, done, max_dd
+
+# --- 2. Replay Buffer & Modell ---
+class ReplayBuffer:
+    def __init__(self, capacity=5000):
+        self.memory = deque(maxlen=capacity)
+    def push(self, *args): self.memory.append(args)
+    def sample(self, batch_size):
+        batch = random.sample(self.memory, batch_size)
+        return map(np.array, zip(*batch))
+
+def build_model(input_shape):
+    model = Sequential([
+        Dense(64, input_dim=input_shape, activation='relu'),
+        Dense(64, activation='relu'),
+        Dense(2, activation='linear')
+    ])
+    model.compile(loss='mse', optimizer=Adam(learning_rate=0.0005))
+    return model
+
+# --- 3. Training Loop ---
+symbol = 'BTC-USD'
+env = FinanceEnv(symbol)
+input_dim = env.n_features * len(env.features)
+
+model = build_model(input_dim)
+target_model = build_model(input_dim)
+buffer = ReplayBuffer()
+
+epsilon = 1.0
+gamma = 0.95
+batch_size = 32
+
+print("Starte Training...")
+for e in range(10): # Episoden
+    state = env.reset()
+    done = False
+    while not done:
+        if np.random.rand() <= epsilon:
+            action = np.random.randint(0, 2)
+        else:
+            action = np.argmax(model.predict(state.reshape(1, -1), verbose=0))
+        
+        next_state, reward, done, max_dd = env.step(action)
+        buffer.push(state, action, reward, next_state, done)
+        state = next_state
+        
+        if len(buffer.memory) > batch_size:
+            s, a, r, ns, d = buffer.sample(batch_size)
+            
+            # Risk-Aware Bellman Equation
+            q_next = target_model.predict(ns, verbose=0)
+            # amax - Malus für Unsicherheit (std)
+            adjusted_q = np.amax(q_next, axis=1) - 0.1 * np.std(q_next, axis=1)
+            targets = r + (gamma * adjusted_q * (1 - d))
+            
+            target_f = model.predict(s, verbose=0)
+            for i, action_idx in enumerate(a):
+                target_f[i][action_idx] = targets[i]
+            
+            model.fit(s, target_f, epochs=1, verbose=0)
+            
+    epsilon = max(0.01, epsilon * 0.9)
+    target_model.set_weights(model.get_weights())
+    print(f"Epi {e} fertig | Profit: {env.treward:.4f} | MaxDD: {max_dd:.4f}")
+
+# --- 4. Speichern für Live-Betrieb ---
+model.save('trading_model_v1.h5')
+with open('scaler.pkl', 'wb') as f:
+    pickle.dump({'mean': env.mean, 'std': env.std}, f)
+print("Modell und Scaler gespeichert.")
